@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boids Simulation</title>
+    <style>
+        body {
+            background-image: url('sky.jpg');
+            background-size: cover;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .container {
+            position: relative;
+            height: 500px;
+            width: 90%;
+            margin-bottom: 20px;
+        }
+
+        .boid {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+        }
+
+        .control-panel {
+            position: fixed;
+            margin-bottom: 20px;
+            bottom: 0;
+            background: white; /* Ensure control panel is visible */
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="c1"></div>
+
+    <div class="control-panel">
+        <label for="boidCount">Boid Count:</label>
+        <input type="range" id="boidCount" min="10" max="1000" value="500">
+        <span id="boidCountValue">500</span><br>
+        <label for="spacing">Spacing:</label>
+        <input type="range" id="spacing" min="10" max="100" value="25">
+        <span id="spacingValue">25</span><br>
+        <label for="speed">Speed:</label>
+        <input type="range" id="speed" min="1" max="10" value="1">
+        <span id="speedValue">1</span>
+    </div>
+
+    <script>
+        const c1 = document.getElementById("c1");
+        const boidCountInput = document.getElementById("boidCount");
+        const boidCountValue = document.getElementById("boidCountValue");
+        const spacingInput = document.getElementById("spacing");
+        const spacingValue = document.getElementById("spacingValue");
+        const speedInput = document.getElementById("speed");
+        const speedValue = document.getElementById("speedValue");
+
+        let boidCount = parseInt(boidCountInput.value);
+        let desiredSeparation = parseInt(spacingInput.value);
+        let speedMultiplier = parseFloat(speedInput.value);
+        let boids = [];
+        const containerHeight = c1.clientHeight;
+        const containerWidth = c1.clientWidth;
+
+        boidCountInput.addEventListener("input", () => {
+            boidCountValue.textContent = boidCountInput.value;
+            boidCount = parseInt(boidCountInput.value);
+            initializeBoids();
+        });
+
+        spacingInput.addEventListener("input", () => {
+            spacingValue.textContent = spacingInput.value;
+            desiredSeparation = parseInt(spacingInput.value);
+        });
+
+        speedInput.addEventListener("input", () => {
+            speedValue.textContent = speedInput.value;
+            speedMultiplier = parseFloat(speedInput.value);
+        });
+
+        // URL of the bird image
+        const birdImageURL = 'bird.png'; // Replace with the URL of your bird image
+
+        class Boid {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = Math.random() * 2 - 1;
+                this.vy = Math.random() * 2 - 1;
+                this.element = document.createElement("img");
+                this.element.classList.add("boid");
+                this.element.src = birdImageURL;
+                c1.appendChild(this.element);
+                this.updatePosition();
+            }
+
+            updatePosition() {
+                this.element.style.top = this.y + "px";
+                this.element.style.left = this.x + "px";
+            }
+
+            applyBehaviors(boids) {
+                let separation = this.separate(boids);
+                let alignment = this.align(boids);
+                let cohesion = this.cohere(boids);
+
+                this.vx += separation.vx + alignment.vx + cohesion.vx;
+                this.vy += separation.vy + alignment.vy + cohesion.vy;
+
+                // Limit speed
+                let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                const maxSpeed = 6 * speedMultiplier;
+                if (speed > maxSpeed) {
+                    this.vx = (this.vx / speed) * maxSpeed;
+                    this.vy = (this.vy / speed) * maxSpeed;
+                }
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wrap around edges
+                if (this.x < 0) this.x = containerWidth;
+                if (this.x > containerWidth) this.x = 0;
+                if (this.y < 0) this.y = containerHeight;
+                if (this.y > containerHeight) this.y = 0;
+
+                this.updatePosition();
+            }
+
+            separate(boids) {
+                let steer = { vx: 0, vy: 0 };
+                let count = 0;
+
+                boids.forEach(boid => {
+                    let d = this.distance(boid);
+                    if (d > 0 && d < desiredSeparation) {
+                        let diff = { vx: this.x - boid.x, vy: this.y - boid.y };
+                        diff.vx /= d;
+                        diff.vy /= d;
+                        steer.vx += diff.vx;
+                        steer.vy += diff.vy;
+                        count++;
+                    }
+                });
+
+                if (count > 0) {
+                    steer.vx /= count;
+                    steer.vy /= count;
+
+                    // Scale to maximum desired separation
+                    steer.vx *= -desiredSeparation;
+                    steer.vy *= -desiredSeparation;
+                }
+
+                return steer;
+            }
+
+            align(boids) {
+                let neighborDist = 50;
+                let steer = { vx: 0, vy: 0 };
+                let count = 0;
+
+                boids.forEach(boid => {
+                    let d = this.distance(boid);
+                    if (d > 0 && d < neighborDist) {
+                        steer.vx += boid.vx;
+                        steer.vy += boid.vy;
+                        count++;
+                    }
+                });
+
+                if (count > 0) {
+                    steer.vx /= count;
+                    steer.vy /= count;
+                    steer.vx -= this.vx;
+                    steer.vy -= this.vy;
+                }
+
+                return steer;
+            }
+
+            cohere(boids) {
+                let neighborDist = 50;
+                let center = { x: 0, y: 0 };
+                let count = 0;
+
+                boids.forEach(boid => {
+                    let d = this.distance(boid);
+                    if (d > 0 && d < neighborDist) {
+                        center.x += boid.x;
+                        center.y += boid.y;
+                        count++;
+                    }
+                });
+
+                if (count > 0) {
+                    center.x /= count;
+                    center.y /= count;
+                    return { vx: (center.x - this.x) / 100, vy: (center.y - this.y) / 100 };
+                }
+
+                return { vx: 0, vy: 0 };
+            }
+
+            distance(boid) {
+                return Math.sqrt((this.x - boid.x) ** 2 + (this.y - boid.y) ** 2);
+            }
+        }
+
+        function initializeBoids() {
+            c1.innerHTML = '';
+            boids = [];
+            for (let i = 0; i < boidCount; i++) {
+                let x = Math.random() * containerWidth;
+                let y = Math.random() * containerHeight;
+                boids.push(new Boid(x, y));
+            }
+        }
+
+        function animateBoids() {
+            boids.forEach(boid => boid.applyBehaviors(boids));
+            requestAnimationFrame(animateBoids);
+        }
+
+        initializeBoids();
+        animateBoids();
+    </script>
+</body>
+</html>
